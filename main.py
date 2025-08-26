@@ -7,7 +7,7 @@ from transformers import LlamaTokenizer, LlamaForCausalLM
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
 )
 from fed_utils import FedAvg, client_selection, global_evaluation, GeneralClient
 import datasets
@@ -144,7 +144,7 @@ def fl_finetune(
                                                                     ]  # could be sped up, probably
         return tokenized_full_prompt
 
-    model = prepare_model_for_int8_training(model)
+    model = prepare_model_for_kbit_training(model)
     config = LoraConfig(
         r=lora_r,
         lora_alpha=lora_alpha,
