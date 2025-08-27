@@ -195,6 +195,54 @@ def fl_finetune(
             del client
 
         print("Collecting the weights of clients and performing aggregation")
+        
+        # # ...existing code...
+        # print("Collecting the weights of clients and performing aggregation")
+
+        # # 统计并记录权重的大小和方向
+        # for name, module in model.named_modules():
+        #     if hasattr(module, "weight"):
+        #         weight = module.weight.data
+        #         magnitude = torch.linalg.norm(weight, dim=1, keepdim=True)
+        #         direction = weight / magnitude
+        #         # 记录到文件
+        #         torch.save(
+        #             {"magnitude": magnitude.cpu(), "direction": direction.cpu()},
+        #             os.path.join(output_dir, str(epoch), f"{name}_weight_stats.pt")
+        #         )
+        # # ...existing code...
+
+        # 统计并记录权重的大小和方向，以及 delta_M^t 和 delta_D^t
+        for name, module in model.named_modules():
+            if hasattr(module, "weight"):
+                weight = module.weight.data
+                magnitude = torch.linalg.norm(weight, dim=1, keepdim=True)
+                direction = weight / magnitude
+                
+                # 加载初始权重统计
+                initial_magnitude = initial_stats[name]["magnitude"].to(weight.device)
+                initial_direction = initial_stats[name]["direction"].to(weight.device)
+                
+                # 计算 delta_M^t = Σ|m^{n,t} - m_0^n| / k
+                k = magnitude.shape[0]  # k = # out_features
+                delta_M = torch.abs(magnitude - initial_magnitude).sum() / k
+                
+                # 计算 delta_D^t = Σ(1 - cos(V^{n,t}, W_0^n)) / k
+                cos_sim = torch.sum(direction * initial_direction, dim=1)
+                cos_sim = torch.clamp(cos_sim, -1.0, 1.0)  # 确保数值稳定性
+                delta_D = (1 - cos_sim).sum() / k
+                
+                # 记录到文件
+                torch.save(
+                    {
+                        "magnitude": magnitude.cpu(),
+                        "direction": direction.cpu(),
+                        "delta_M": delta_M.cpu(),
+                        "delta_D": delta_D.cpu()
+                    },
+                    os.path.join(output_dir, str(epoch), f"{name}_weight_stats.pt")
+                )
+        
         model = FedAvg(model,
                        selected_clients_set,
                        output_dir,
