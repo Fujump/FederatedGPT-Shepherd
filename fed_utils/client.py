@@ -85,7 +85,34 @@ class GeneralClient:
             )
         ).__get__(self.model, type(self.model))
 
+    def record_lora_weight_stats(self, step):
+        weight_stats_dir = os.path.join(self.local_output_dir, "weight_stats")
+        os.makedirs(weight_stats_dir, exist_ok=True)
+        stats = {}
+        for name, module in self.model.named_modules():
+            if "lora_A.default" in name or "lora_B.default" in name:
+                if hasattr(module, 'weight'):
+                    weight = module.weight.data
+                    magnitude = torch.linalg.norm(weight.float(), dim=1, keepdim=True)
+                    direction = weight / magnitude
+                    stats[name] = {
+                        "magnitude": magnitude.cpu(),
+                        "direction": direction.cpu()
+                    }
+        torch.save(stats, os.path.join(weight_stats_dir, f"step_{step}_weight_stats.pt"))
+
     def train(self):
+        self.record_lora_weight_stats(step=0)
+        from transformers import TrainerCallback, TrainingArguments, Trainer
+
+        class LoraWeightStatsCallback(TrainerCallback):
+            def __init__(self, client):
+                self.client = client
+
+            def on_step_end(self, args, state, control, **kwargs):
+                self.client.record_lora_weight_stats(state.global_step)
+
+        self.local_trainer.add_callback(LoraWeightStatsCallback(self))
         self.local_trainer.train()
 
     def terminate_local_training(self, epoch, local_dataset_len_dict, previously_selected_clients_set):
